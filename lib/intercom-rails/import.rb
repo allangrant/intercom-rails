@@ -12,6 +12,7 @@ module IntercomRails
     end
 
     def self.run(*args)
+      ActiveRecord::Base.logger = nil
       new(*args).run
     end
 
@@ -65,9 +66,12 @@ module IntercomRails
     end
 
     private
-    MAX_BATCH_SIZE = 100
+    MAX_BATCH_SIZE = (ENV['MAX_BATCH_SIZE'] && ENV['MAX_BATCH_SIZE'].to_i) || 100
+    START_AT = (ENV['START_AT'] && ENV['START_AT'].to_i) || 0 
     def batches
-      user_klass.find_in_batches(:batch_size => MAX_BATCH_SIZE) do |users|
+      puts "Starting at #{START_AT}. Processing #{MAX_BATCH_SIZE} at a time."
+      iteration = 0
+      user_klass.find_in_batches(:batch_size => MAX_BATCH_SIZE, :start => START_AT) do |users|
         users_for_wire = users.map do |u| 
           user_proxy = Proxy::User.new(u)
           next unless user_proxy.valid?
@@ -79,7 +83,9 @@ module IntercomRails
           for_wire
         end.compact
 
+        puts "Sending #{users.first.id} to #{users.last.id}..."
         yield(prepare_batch(users_for_wire), users_for_wire.count) unless users_for_wire.count.zero?
+        iteration += 1
       end
     end
 
